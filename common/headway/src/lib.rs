@@ -1,48 +1,80 @@
-use axum::{response::Html, routing::get, Router};
-use tokio::runtime::Runtime;
+pub mod map_tiles;
+pub mod server;
+
+pub use server::HeadwayServer;
+
+#[cfg(target_os = "ios")]
+use oslog::OsLogger;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 #[uniffi(flat_error)]
-pub enum ServerError {
+pub enum Error {
     #[error("Failed to create runtime: {0}")]
-    RuntimeError(String),
-    #[error("Failed to bind to {addr}: {error}")]
-    BindError { addr: String, error: String },
+    Runtime(String),
+    #[error("Invalid Input: {0}")]
+    InvalidInput(String),
     #[error("Server error: {0}")]
-    ServeError(String),
+    Serve(String),
+    #[error(transparent)]
+    PmTiles(#[from] pmtiles::PmtError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
-/// Starts a local web server on the specified port with a hello_world endpoint.
-/// Returns a handle that can be used to manage the server.
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(uniffi::Enum)]
+pub enum LogLevel {
+    /// A level lower than all log levels.
+    Off,
+    /// Corresponds to the `Error` log level.
+    Error,
+    /// Corresponds to the `Warn` log level.
+    Warn,
+    /// Corresponds to the `Info` log level.
+    Info,
+    /// Corresponds to the `Debug` log level.
+    Debug,
+    /// Corresponds to the `Trace` log level.
+    Trace,
+}
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Off => Self::Off,
+            LogLevel::Error => Self::Error,
+            LogLevel::Warn => Self::Warn,
+            LogLevel::Info => Self::Info,
+            LogLevel::Debug => Self::Debug,
+            LogLevel::Trace => Self::Trace,
+        }
+    }
+}
+/// Initializes the logger for the headway library.
+/// This should be called once at application startup.
+/// On iOS, this will use OSLog with the specified subsystem and category.
 #[uniffi::export]
-pub fn start_server(addr: &str) -> Result<(), ServerError> {
-    // Create a new Tokio runtime
-    let rt = Runtime::new().map_err(|e| ServerError::RuntimeError(e.to_string()))?;
+pub fn enable_logging(subsystem: String, log_level: LogLevel) {
+    #[cfg(target_os = "ios")]
+    {
+        OsLogger::new(&subsystem)
+            .level_filter(log_level.into())
+            .init()
+            .ok(); // Ignore error if already initialized
+    }
 
-    rt.block_on(async {
-        // Build the router with a hello_world endpoint
-        let app = Router::new()
-            .route("/hello_world", get(hello_world));
-
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .map_err(|e| ServerError::BindError {
-                addr: addr.to_string(),
-                error: e.to_string(),
-            })?;
-
-        println!("Server running on http://{}", addr);
-
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| ServerError::ServeError(e.to_string()))?;
-
-        Ok::<(), ServerError>(())
-    })
-}
-
-async fn hello_world() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
+    #[cfg(not(target_os = "ios"))]
+    {
+        // Fallback for non-iOS platforms (e.g., simulator or tests)
+        let _ = subsystem; // Avoid unused variable warning
+        env_logger::Builder::from_default_env()
+            .filter_level(log_level.into())
+            .try_init()
+            .ok();
+    }
 }
 
 uniffi::setup_scaffolding!();

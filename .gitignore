@@ -1,5 +1,4 @@
 # Rust build artifacts
 common/target/
-common/Cargo.lock
 
 .swiftpm

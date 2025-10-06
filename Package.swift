@@ -11,7 +11,7 @@ let package = Package(
     products: [
       .library(
         name: "Headway",
-        targets: ["HeadwayFFI"]
+        targets: ["Headway", "HeadwayFFI"]
       ),
     ],
     targets: [
@@ -25,6 +25,11 @@ let package = Package(
         name: "HeadwayFFI",
         dependencies: [.target(name: "HeadwayRS")],
         path: "apple/Sources/UniFFI"
+      ),
+      .target(
+        name: "Headway",
+        dependencies: [.target(name: "HeadwayFFI")],
+        path: "apple/Sources/Headway"
       ),
     ]
 )

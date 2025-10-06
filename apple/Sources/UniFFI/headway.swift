@@ -395,7 +395,45 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 
 
 // Public interface members begin here.
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+// Callback return codes
+private let UNIFFI_CALLBACK_SUCCESS: Int32 = 0
+private let UNIFFI_CALLBACK_ERROR: Int32 = 1
+private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -439,15 +477,872 @@ fileprivate struct FfiConverterString: FfiConverter {
 }
 
 
-public enum ServerError: Swift.Error {
+
+
+public protocol BoundsProtocol: AnyObject, Sendable {
+    
+}
+open class Bounds: BoundsProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_headway_fn_clone_bounds(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_headway_fn_free_bounds(pointer, $0) }
+    }
+
+    
+public static func nesw(maxLat: Double, maxLon: Double, minLat: Double, minLon: Double) -> Bounds  {
+    return try!  FfiConverterTypeBounds_lift(try! rustCall() {
+    uniffi_headway_fn_constructor_bounds_nesw(
+        FfiConverterDouble.lower(maxLat),
+        FfiConverterDouble.lower(maxLon),
+        FfiConverterDouble.lower(minLat),
+        FfiConverterDouble.lower(minLon),$0
+    )
+})
+}
+    
+
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBounds: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = Bounds
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> Bounds {
+        return Bounds(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: Bounds) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bounds {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: Bounds, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBounds_lift(_ pointer: UnsafeMutableRawPointer) throws -> Bounds {
+    return try FfiConverterTypeBounds.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBounds_lower(_ value: Bounds) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeBounds.lower(value)
+}
+
+
+
+
+
+
+public protocol ExtractProgress: AnyObject, Sendable {
+    
+    func onProgress(progress: Double) 
+    
+}
+open class ExtractProgressImpl: ExtractProgress, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_headway_fn_clone_extractprogress(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_headway_fn_free_extractprogress(pointer, $0) }
+    }
+
+    
+
+    
+open func onProgress(progress: Double)  {try! rustCall() {
+    uniffi_headway_fn_method_extractprogress_on_progress(self.uniffiClonePointer(),
+        FfiConverterDouble.lower(progress),$0
+    )
+}
+}
+    
+
+}
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceExtractProgress {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceExtractProgress] = [UniffiVTableCallbackInterfaceExtractProgress(
+        onProgress: { (
+            uniffiHandle: UInt64,
+            progress: Double,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeExtractProgress.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onProgress(
+                     progress: try FfiConverterDouble.lift(progress)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            let result = try? FfiConverterTypeExtractProgress.handleMap.remove(handle: uniffiHandle)
+            if result == nil {
+                print("Uniffi callback interface ExtractProgress: handle missing in uniffiFree")
+            }
+        }
+    )]
+}
+
+private func uniffiCallbackInitExtractProgress() {
+    uniffi_headway_fn_init_callback_vtable_extractprogress(UniffiCallbackInterfaceExtractProgress.vtable)
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeExtractProgress: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<ExtractProgress>()
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = ExtractProgress
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> ExtractProgress {
+        return ExtractProgressImpl(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: ExtractProgress) -> UnsafeMutableRawPointer {
+        guard let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: handleMap.insert(obj: value))) else {
+            fatalError("Cast to UnsafeMutableRawPointer failed")
+        }
+        return ptr
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExtractProgress {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: ExtractProgress, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExtractProgress_lift(_ pointer: UnsafeMutableRawPointer) throws -> ExtractProgress {
+    return try FfiConverterTypeExtractProgress.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExtractProgress_lower(_ value: ExtractProgress) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeExtractProgress.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A thin wrapper around PMTiles ExtractPlan so we can export it
+ */
+public protocol ExtractionPlanProtocol: AnyObject, Sendable {
+    
+    func tileDataLength()  -> UInt64
+    
+}
+/**
+ * A thin wrapper around PMTiles ExtractPlan so we can export it
+ */
+open class ExtractionPlan: ExtractionPlanProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_headway_fn_clone_extractionplan(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_headway_fn_free_extractionplan(pointer, $0) }
+    }
+
+    
+
+    
+open func tileDataLength() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+    uniffi_headway_fn_method_extractionplan_tile_data_length(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeExtractionPlan: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = ExtractionPlan
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> ExtractionPlan {
+        return ExtractionPlan(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: ExtractionPlan) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExtractionPlan {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: ExtractionPlan, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExtractionPlan_lift(_ pointer: UnsafeMutableRawPointer) throws -> ExtractionPlan {
+    return try FfiConverterTypeExtractionPlan.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExtractionPlan_lower(_ value: ExtractionPlan) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeExtractionPlan.lower(value)
+}
+
+
+
+
+
+
+public protocol HeadwayServerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Downloads a complete pmtiles file from a URL to the system tileset directory.
+     *
+     * System tilesets are permanent and cannot be deleted by users (unlike user-extracted regions).
+     * Typically used for bundling low-resolution global overview tiles.
+     * Skips download if the destination file already exists.
+     */
+    func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String) async throws 
+    
+    /**
+     * Downloads the tile data for an extracted region based on the prepared plan.
+     *
+     * Call [`Self::prepare_pmtiles_extract`] first to get an [`ExtractionPlan`].
+     *
+     * Upon completion, the extracted tileset will automatically be served by the tileserver, though
+     * you may need to clear your map client's tile cache if it had previously requested the
+     * area covered by the newly added extract.
+     */
+    func extractPmtilesRegion(plan: ExtractionPlan, progressCallback: ExtractProgress?) async throws  -> RegionRecord
+    
+    /**
+     * Plans a pmtiles extraction without downloading the tile data. It does require traversing
+     * the remote index directories.
+     *
+     * Use this to determine how much data would be downloaded before committing to the extraction.
+     * Call [`Self::extract_pmtiles_region`] with the returned plan to perform the actual download.
+     */
+    func preparePmtilesExtract(bounds: Bounds, progressCallback: ExtractProgress?) async throws  -> ExtractionPlan
+    
+    /**
+     * Delete a previously downloaded pmtiles region extract
+     */
+    func removePmtilesExtract(fileName: String) async throws 
+    
+    /**
+     * Starts the server on the given address
+     */
+    func start(bindAddr: String) async throws 
+    
+}
+open class HeadwayServer: HeadwayServerProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_headway_fn_clone_headwayserver(self.pointer, $0) }
+    }
+    /**
+     * `storage_dir`: Persists server data like pmtiles extracts
+     * `extract_source_url`: Should point to a planet file suitable for running pmtile extracts against
+     */
+public convenience init(storageDir: String, extractSourceUrl: String)async throws  {
+    let pointer =
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_constructor_headwayserver_new(FfiConverterString.lower(storageDir),FfiConverterString.lower(extractSourceUrl)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_pointer,
+            completeFunc: ffi_headway_rust_future_complete_pointer,
+            freeFunc: ffi_headway_rust_future_free_pointer,
+            liftFunc: FfiConverterTypeHeadwayServer_lift,
+            errorHandler: FfiConverterTypeError_lift
+        )
+        
+        .uniffiClonePointer()
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_headway_fn_free_headwayserver(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Downloads a complete pmtiles file from a URL to the system tileset directory.
+     *
+     * System tilesets are permanent and cannot be deleted by users (unlike user-extracted regions).
+     * Typically used for bundling low-resolution global overview tiles.
+     * Skips download if the destination file already exists.
+     */
+open func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_method_headwayserver_download_system_pmtiles_if_necessary(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(sourceUrl),FfiConverterString.lower(destinationFilename)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_void,
+            completeFunc: ffi_headway_rust_future_complete_void,
+            freeFunc: ffi_headway_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeError_lift
+        )
+}
+    
+    /**
+     * Downloads the tile data for an extracted region based on the prepared plan.
+     *
+     * Call [`Self::prepare_pmtiles_extract`] first to get an [`ExtractionPlan`].
+     *
+     * Upon completion, the extracted tileset will automatically be served by the tileserver, though
+     * you may need to clear your map client's tile cache if it had previously requested the
+     * area covered by the newly added extract.
+     */
+open func extractPmtilesRegion(plan: ExtractionPlan, progressCallback: ExtractProgress?)async throws  -> RegionRecord  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_method_headwayserver_extract_pmtiles_region(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeExtractionPlan_lower(plan),FfiConverterOptionTypeExtractProgress.lower(progressCallback)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_pointer,
+            completeFunc: ffi_headway_rust_future_complete_pointer,
+            freeFunc: ffi_headway_rust_future_free_pointer,
+            liftFunc: FfiConverterTypeRegionRecord_lift,
+            errorHandler: FfiConverterTypeError_lift
+        )
+}
+    
+    /**
+     * Plans a pmtiles extraction without downloading the tile data. It does require traversing
+     * the remote index directories.
+     *
+     * Use this to determine how much data would be downloaded before committing to the extraction.
+     * Call [`Self::extract_pmtiles_region`] with the returned plan to perform the actual download.
+     */
+open func preparePmtilesExtract(bounds: Bounds, progressCallback: ExtractProgress?)async throws  -> ExtractionPlan  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_method_headwayserver_prepare_pmtiles_extract(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeBounds_lower(bounds),FfiConverterOptionTypeExtractProgress.lower(progressCallback)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_pointer,
+            completeFunc: ffi_headway_rust_future_complete_pointer,
+            freeFunc: ffi_headway_rust_future_free_pointer,
+            liftFunc: FfiConverterTypeExtractionPlan_lift,
+            errorHandler: FfiConverterTypeError_lift
+        )
+}
+    
+    /**
+     * Delete a previously downloaded pmtiles region extract
+     */
+open func removePmtilesExtract(fileName: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_method_headwayserver_remove_pmtiles_extract(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(fileName)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_void,
+            completeFunc: ffi_headway_rust_future_complete_void,
+            freeFunc: ffi_headway_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeError_lift
+        )
+}
+    
+    /**
+     * Starts the server on the given address
+     */
+open func start(bindAddr: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_headway_fn_method_headwayserver_start(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(bindAddr)
+                )
+            },
+            pollFunc: ffi_headway_rust_future_poll_void,
+            completeFunc: ffi_headway_rust_future_complete_void,
+            freeFunc: ffi_headway_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeError_lift
+        )
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHeadwayServer: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = HeadwayServer
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> HeadwayServer {
+        return HeadwayServer(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: HeadwayServer) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HeadwayServer {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: HeadwayServer, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHeadwayServer_lift(_ pointer: UnsafeMutableRawPointer) throws -> HeadwayServer {
+    return try FfiConverterTypeHeadwayServer.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHeadwayServer_lower(_ value: HeadwayServer) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeHeadwayServer.lower(value)
+}
+
+
+
+
+
+
+public protocol RegionRecordProtocol: AnyObject, Sendable {
+    
+    func bounds()  -> Bounds
+    
+    func fileName()  -> String
+    
+    func fileSize()  -> UInt64
+    
+}
+open class RegionRecord: RegionRecordProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_headway_fn_clone_regionrecord(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_headway_fn_free_regionrecord(pointer, $0) }
+    }
+
+    
+
+    
+open func bounds() -> Bounds  {
+    return try!  FfiConverterTypeBounds_lift(try! rustCall() {
+    uniffi_headway_fn_method_regionrecord_bounds(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func fileName() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_headway_fn_method_regionrecord_file_name(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func fileSize() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+    uniffi_headway_fn_method_regionrecord_file_size(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRegionRecord: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = RegionRecord
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> RegionRecord {
+        return RegionRecord(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: RegionRecord) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RegionRecord {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: RegionRecord, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRegionRecord_lift(_ pointer: UnsafeMutableRawPointer) throws -> RegionRecord {
+    return try FfiConverterTypeRegionRecord.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRegionRecord_lower(_ value: RegionRecord) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeRegionRecord.lower(value)
+}
+
+
+
+
+public enum Error: Swift.Error {
 
     
     
-    case RuntimeError(message: String)
+    case Runtime(message: String)
     
-    case BindError(message: String)
+    case InvalidInput(message: String)
     
-    case ServeError(message: String)
+    case Serve(message: String)
+    
+    case PmTiles(message: String)
+    
+    case Reqwest(message: String)
+    
+    case Io(message: String)
     
 }
 
@@ -455,25 +1350,37 @@ public enum ServerError: Swift.Error {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeServerError: FfiConverterRustBuffer {
-    typealias SwiftType = ServerError
+public struct FfiConverterTypeError: FfiConverterRustBuffer {
+    typealias SwiftType = Error
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServerError {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Error {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
         
 
         
-        case 1: return .RuntimeError(
+        case 1: return .Runtime(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 2: return .BindError(
+        case 2: return .InvalidInput(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 3: return .ServeError(
+        case 3: return .Serve(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .PmTiles(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .Reqwest(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .Io(
             message: try FfiConverterString.read(from: &buf)
         )
         
@@ -482,18 +1389,24 @@ public struct FfiConverterTypeServerError: FfiConverterRustBuffer {
         }
     }
 
-    public static func write(_ value: ServerError, into buf: inout [UInt8]) {
+    public static func write(_ value: Error, into buf: inout [UInt8]) {
         switch value {
 
         
 
         
-        case .RuntimeError(_ /* message is ignored*/):
+        case .Runtime(_ /* message is ignored*/):
             writeInt(&buf, Int32(1))
-        case .BindError(_ /* message is ignored*/):
+        case .InvalidInput(_ /* message is ignored*/):
             writeInt(&buf, Int32(2))
-        case .ServeError(_ /* message is ignored*/):
+        case .Serve(_ /* message is ignored*/):
             writeInt(&buf, Int32(3))
+        case .PmTiles(_ /* message is ignored*/):
+            writeInt(&buf, Int32(4))
+        case .Reqwest(_ /* message is ignored*/):
+            writeInt(&buf, Int32(5))
+        case .Io(_ /* message is ignored*/):
+            writeInt(&buf, Int32(6))
 
         
         }
@@ -504,24 +1417,24 @@ public struct FfiConverterTypeServerError: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeServerError_lift(_ buf: RustBuffer) throws -> ServerError {
-    return try FfiConverterTypeServerError.lift(buf)
+public func FfiConverterTypeError_lift(_ buf: RustBuffer) throws -> Error {
+    return try FfiConverterTypeError.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeServerError_lower(_ value: ServerError) -> RustBuffer {
-    return FfiConverterTypeServerError.lower(value)
+public func FfiConverterTypeError_lower(_ value: Error) -> RustBuffer {
+    return FfiConverterTypeError.lower(value)
 }
 
 
-extension ServerError: Equatable, Hashable {}
+extension Error: Equatable, Hashable {}
 
 
 
 
-extension ServerError: Foundation.LocalizedError {
+extension Error: Foundation.LocalizedError {
     public var errorDescription: String? {
         String(reflecting: self)
     }
@@ -529,13 +1442,201 @@ extension ServerError: Foundation.LocalizedError {
 
 
 
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum LogLevel {
+    
+    /**
+     * A level lower than all log levels.
+     */
+    case off
+    /**
+     * Corresponds to the `Error` log level.
+     */
+    case error
+    /**
+     * Corresponds to the `Warn` log level.
+     */
+    case warn
+    /**
+     * Corresponds to the `Info` log level.
+     */
+    case info
+    /**
+     * Corresponds to the `Debug` log level.
+     */
+    case debug
+    /**
+     * Corresponds to the `Trace` log level.
+     */
+    case trace
+}
+
+
+#if compiler(>=6)
+extension LogLevel: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLogLevel: FfiConverterRustBuffer {
+    typealias SwiftType = LogLevel
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LogLevel {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .off
+        
+        case 2: return .error
+        
+        case 3: return .warn
+        
+        case 4: return .info
+        
+        case 5: return .debug
+        
+        case 6: return .trace
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LogLevel, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .off:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .error:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .warn:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .info:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .debug:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .trace:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLogLevel_lift(_ buf: RustBuffer) throws -> LogLevel {
+    return try FfiConverterTypeLogLevel.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLogLevel_lower(_ value: LogLevel) -> RustBuffer {
+    return FfiConverterTypeLogLevel.lower(value)
+}
+
+
+extension LogLevel: Equatable, Hashable {}
+
+
+
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeExtractProgress: FfiConverterRustBuffer {
+    typealias SwiftType = ExtractProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeExtractProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeExtractProgress.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
+private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
+
+fileprivate let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
+
+fileprivate func uniffiRustCallAsync<F, T>(
+    rustFutureFunc: () -> UInt64,
+    pollFunc: (UInt64, @escaping UniffiRustFutureContinuationCallback, UInt64) -> (),
+    completeFunc: (UInt64, UnsafeMutablePointer<RustCallStatus>) -> F,
+    freeFunc: (UInt64) -> (),
+    liftFunc: (F) throws -> T,
+    errorHandler: ((RustBuffer) throws -> Swift.Error)?
+) async throws -> T {
+    // Make sure to call the ensure init function since future creation doesn't have a
+    // RustCallStatus param, so doesn't use makeRustCall()
+    uniffiEnsureHeadwayInitialized()
+    let rustFuture = rustFutureFunc()
+    defer {
+        freeFunc(rustFuture)
+    }
+    var pollResult: Int8;
+    repeat {
+        pollResult = await withUnsafeContinuation {
+            pollFunc(
+                rustFuture,
+                uniffiFutureContinuationCallback,
+                uniffiContinuationHandleMap.insert(obj: $0)
+            )
+        }
+    } while pollResult != UNIFFI_RUST_FUTURE_POLL_READY
+
+    return try liftFunc(makeRustCall(
+        { completeFunc(rustFuture, $0) },
+        errorHandler: errorHandler
+    ))
+}
+
+// Callback handlers for an async calls.  These are invoked by Rust when the future is ready.  They
+// lift the return value or error and resume the suspended function.
+fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: Int8) {
+    if let continuation = try? uniffiContinuationHandleMap.remove(handle: handle) {
+        continuation.resume(returning: pollResult)
+    } else {
+        print("uniffiFutureContinuationCallback invalid handle")
+    }
+}
 /**
- * Starts a local web server on the specified port with a hello_world endpoint.
- * Returns a handle that can be used to manage the server.
+ * Initializes the logger for the headway library.
+ * This should be called once at application startup.
+ * On iOS, this will use OSLog with the specified subsystem and category.
  */
-public func startServer(addr: String)throws   {try rustCallWithError(FfiConverterTypeServerError_lift) {
-    uniffi_headway_fn_func_start_server(
-        FfiConverterString.lower(addr),$0
+public func enableLogging(subsystem: String, logLevel: LogLevel)  {try! rustCall() {
+    uniffi_headway_fn_func_enable_logging(
+        FfiConverterString.lower(subsystem),
+        FfiConverterTypeLogLevel_lower(logLevel),$0
     )
 }
 }
@@ -555,10 +1656,47 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_headway_checksum_func_start_server() != 12929) {
+    if (uniffi_headway_checksum_func_enable_logging() != 41416) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_extractprogress_on_progress() != 48695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_extractionplan_tile_data_length() != 55924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_headwayserver_download_system_pmtiles_if_necessary() != 7351) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_headwayserver_extract_pmtiles_region() != 25214) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_headwayserver_prepare_pmtiles_extract() != 7180) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_headwayserver_remove_pmtiles_extract() != 42290) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_headwayserver_start() != 17162) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_regionrecord_bounds() != 21628) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_regionrecord_file_name() != 948) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_method_regionrecord_file_size() != 24142) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_constructor_bounds_nesw() != 9608) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_headway_checksum_constructor_headwayserver_new() != 50757) {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitExtractProgress()
     return InitializationResult.ok
 }()
 

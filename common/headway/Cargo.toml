@@ -8,10 +8,22 @@ rust-version = "1.83.0"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-axum = "0.8"
-thiserror = "2.0"
-tokio = { version = "1.42", features = ["rt-multi-thread", "macros"] }
-uniffi = { version = "0.29.4" }
+axum = {  version = "0.8", default-features = false, features=["tokio", "http1"] }
+bytes = "1.10.1"
+log = "0.4"
+#pmtiles = {  version = "0.18.0", default-features = false, features = ["iter-async", "mmap-async-tokio", "http-async", "tilejson", "extract"] }
+pmtiles = {  git = "https://github.com/michaelkirk/pmtiles-rs", branch = "mkirk/extract", version = "0.18.0", default-features = false, features = ["iter-async", "mmap-async-tokio", "http-async", "tilejson", "extract"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+thiserror = "2.0.17"
+tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "io-util"] }
+uniffi = { workspace = true, features = ["tokio"] }
+uuid = { version = "1.18.1", features = ["v4"], default-features = false }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+oslog = "0.2"
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+env_logger = "0.11"
 
 [build-dependencies]
 uniffi = { version = "0.29.4", features = ["build"] }
