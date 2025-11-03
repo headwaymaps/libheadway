@@ -21,9 +21,21 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("{1}: {0}")]
+    WithContext(Box<Error>, String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+trait ErrorContext<T> {
+    fn context(self, context: impl ToString) -> Result<T>;
+}
+
+impl<T, IntoError: Into<Error>> ErrorContext<T> for std::result::Result<T, IntoError> {
+    fn context(self, context: impl ToString) -> Result<T> {
+        self.map_err(|e| Error::WithContext(Box::new(e.into()), context.to_string()))
+    }
+}
 
 #[derive(uniffi::Enum)]
 pub enum LogLevel {

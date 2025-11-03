@@ -19,10 +19,15 @@ pub struct Extractor {
 
 impl Extractor {
     pub(crate) async fn new(source_url: &str) -> Result<Self> {
-        Ok(Self { source_url: source_url.into(), reader: None })
+        Ok(Self {
+            source_url: source_url.into(),
+            reader: None,
+        })
     }
 
-    pub(crate) async fn reader(&mut self) -> Result<&mut AsyncPmTilesReader<HttpBackend, HashMapCache>> {
+    pub(crate) async fn reader(
+        &mut self,
+    ) -> Result<&mut AsyncPmTilesReader<HttpBackend, HashMapCache>> {
         if self.reader.is_none() {
             let client = Client::builder()
                 .user_agent("maps.earth-ios/0.1.0")
@@ -30,7 +35,8 @@ impl Extractor {
                 .expect("nothing invalid in client builder");
             let backend = HttpBackend::try_from(client, &self.source_url)?;
             let reader =
-                AsyncPmTilesReader::try_from_cached_source(backend, HashMapCache::default()).await?;
+                AsyncPmTilesReader::try_from_cached_source(backend, HashMapCache::default())
+                    .await?;
             self.reader = Some(reader);
         }
         Ok(self.reader.as_mut().expect("ensured initialized just now"))

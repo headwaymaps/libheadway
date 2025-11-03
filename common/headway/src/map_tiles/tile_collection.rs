@@ -5,7 +5,7 @@
 // - have this entity call the extract logic to mutate its own state (so we don't need to restart service)
 
 use super::{Bounds, RegionRecord};
-use crate::{Error, Result};
+use crate::{Error, ErrorContext, Result};
 use bytes::Bytes;
 use pmtiles::{AsyncPmTilesReader, MmapBackend, TileCoord};
 use std::fmt::Formatter;
@@ -103,7 +103,12 @@ impl TileCollection {
             if path.extension().and_then(|s| s.to_str()) != Some("pmtiles") {
                 continue;
             }
-            self.add_source(&path).await?;
+            match self.add_source(&path).await {
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("Skipping pmtiles source: {path:?} due to error: {e}")
+                }
+            }
         }
 
         if self.pmtiles_sources.is_empty() {
@@ -137,7 +142,9 @@ impl TileCollection {
             return Err(Error::Runtime(format!("invalid source path: {path:?}")));
         };
         log::debug!("Adding PMTiles file: {}", path_display.display());
-        let reader = AsyncPmTilesReader::new_with_path(&path).await?;
+        let reader = AsyncPmTilesReader::new_with_path(&path)
+            .await
+            .context(format!("pmtiles archive: {path:?}"))?;
 
         let header = reader.get_header();
         let bounds = Bounds {

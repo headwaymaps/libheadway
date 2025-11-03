@@ -1344,6 +1344,8 @@ public enum Error: Swift.Error {
     
     case Io(message: String)
     
+    case WithContext(message: String)
+    
 }
 
 
@@ -1384,6 +1386,10 @@ public struct FfiConverterTypeError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
+        case 7: return .WithContext(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -1407,6 +1413,8 @@ public struct FfiConverterTypeError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(5))
         case .Io(_ /* message is ignored*/):
             writeInt(&buf, Int32(6))
+        case .WithContext(_ /* message is ignored*/):
+            writeInt(&buf, Int32(7))
 
         
         }
