@@ -11,8 +11,9 @@ crate-type = ["cdylib", "staticlib"]
 axum = {  version = "0.8", default-features = false, features=["tokio", "http1"] }
 bytes = "1.10.1"
 log = "0.4"
-#pmtiles = {  version = "0.18.0", default-features = false, features = ["iter-async", "mmap-async-tokio", "http-async", "tilejson", "extract"] }
-pmtiles = {  git = "https://github.com/michaelkirk/pmtiles-rs", branch = "mkirk/extract", version = "0.18.0", default-features = false, features = ["iter-async", "mmap-async-tokio", "http-async", "tilejson", "extract"] }
+#pmtiles = {  version = "0.18.0", default-features = false, features = ["mmap-async-tokio", "http-async", "extract"] }
+pmtiles = {  git = "https://github.com/michaelkirk/pmtiles-rs", branch = "mkirk/extract-stream", version = "0.18.0", default-features = false, features = ["mmap-async-tokio", "http-async",  "extract"] }
+#pmtiles = {  path = "../../../../../pmtiles/pmtiles-rs", version = "0.18.0", default-features = false, features = ["mmap-async-tokio", "extract", "http-async"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 thiserror = "2.0.17"
 tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread", "io-util"] }

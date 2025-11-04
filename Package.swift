@@ -17,7 +17,7 @@ let package = Package(
     targets: [
       .binaryTarget(
         name: "HeadwayRS",
-        // run `./common/bin/build-ios.sh` to produce this framework
+        // run `./bin/build-ios.sh` to produce this framework
         // re-run whenever rust code is modified
         path: "./common/target/ios/libheadway-rs.xcframework"
       ),

@@ -107,7 +107,6 @@ impl HeadwayServer {
             .load_tiles_from_storage()
             .await
             .context("loading tiles from storage")?;
-        // FIXME: wont this error when offline? Maybe build extractor dynamically
         let extractor = Extractor::new(extract_source_url).await?;
         Ok(Self {
             extractor: Arc::new(RwLock::new(extractor)),
