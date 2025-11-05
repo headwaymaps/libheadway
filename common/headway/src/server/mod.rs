@@ -223,11 +223,13 @@ impl HeadwayServer {
     /// System tilesets are permanent and cannot be deleted by users (unlike user-extracted regions).
     /// Typically used for bundling low-resolution global overview tiles.
     /// Skips download if the destination file already exists.
+    ///
+    /// Returns `true` if the file was downloaded, `false` if it already existed.
     pub async fn download_system_pmtiles_if_necessary(
         &self,
         source_url: &str,
         destination_filename: &str,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let mut destination_path = {
             let tile_collection = self.tile_collection.read().await;
             tile_collection.system_root()
@@ -240,7 +242,7 @@ impl HeadwayServer {
         }
         if std::fs::exists(&destination_path)? {
             log::debug!("{destination_filename} already exists");
-            return Ok(());
+            return Ok(false);
         }
         log::info!("Fetching {destination_filename} from {source_url}");
         let response = reqwest::get(source_url).await?;
@@ -250,7 +252,7 @@ impl HeadwayServer {
             let mut collection = self.tile_collection.write().await;
             collection.add_source(&destination_path).await?;
         }
-        Ok(())
+        Ok(true)
     }
 }
 

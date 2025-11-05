@@ -438,6 +438,30 @@ fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterBool : FfiConverter {
+    typealias FfiType = Int8
+    typealias SwiftType = Bool
+
+    public static func lift(_ value: Int8) throws -> Bool {
+        return value != 0
+    }
+
+    public static func lower(_ value: Bool) -> Int8 {
+        return value ? 1 : 0
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Bool, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -912,8 +936,10 @@ public protocol HeadwayServerProtocol: AnyObject, Sendable {
      * System tilesets are permanent and cannot be deleted by users (unlike user-extracted regions).
      * Typically used for bundling low-resolution global overview tiles.
      * Skips download if the destination file already exists.
+     *
+     * Returns `true` if the file was downloaded, `false` if it already existed.
      */
-    func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String) async throws 
+    func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String) async throws  -> Bool
     
     /**
      * Downloads the tile data for an extracted region based on the prepared plan.
@@ -1024,8 +1050,10 @@ public convenience init(storageDir: String, extractSourceUrl: String)async throw
      * System tilesets are permanent and cannot be deleted by users (unlike user-extracted regions).
      * Typically used for bundling low-resolution global overview tiles.
      * Skips download if the destination file already exists.
+     *
+     * Returns `true` if the file was downloaded, `false` if it already existed.
      */
-open func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String)async throws   {
+open func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilename: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
@@ -1034,10 +1062,10 @@ open func downloadSystemPmtilesIfNecessary(sourceUrl: String, destinationFilenam
                     FfiConverterString.lower(sourceUrl),FfiConverterString.lower(destinationFilename)
                 )
             },
-            pollFunc: ffi_headway_rust_future_poll_void,
-            completeFunc: ffi_headway_rust_future_complete_void,
-            freeFunc: ffi_headway_rust_future_free_void,
-            liftFunc: { $0 },
+            pollFunc: ffi_headway_rust_future_poll_i8,
+            completeFunc: ffi_headway_rust_future_complete_i8,
+            freeFunc: ffi_headway_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeError_lift
         )
 }
@@ -1673,7 +1701,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_headway_checksum_method_extractionplan_tile_data_length() != 55924) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_headway_checksum_method_headwayserver_download_system_pmtiles_if_necessary() != 7351) {
+    if (uniffi_headway_checksum_method_headwayserver_download_system_pmtiles_if_necessary() != 35408) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_headway_checksum_method_headwayserver_extract_pmtiles_region() != 25214) {
