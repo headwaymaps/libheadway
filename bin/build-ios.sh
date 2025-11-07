@@ -46,12 +46,12 @@ generate_ffi() {
 
   echo "Using iOS library for FFI generation"
   # TODO: do we need module-name here?
-  cargo --offline run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a ../apple/Sources/UniFFI --swift-sources
+  cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a ../apple/Sources/UniFFI --swift-sources
 
   # NOTE: headers are in a flat namespace, so any other framework with a module.modulemap at the top level would collide if we didn't add a directory for namespacing
   namespaced_header_dir="${header_dir}/$1"
   # NOTE: Convention requires the modulemap be named module.modulemap
-  cargo --offline run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a $namespaced_header_dir --headers --modulemap --module-name $1FFI --modulemap-filename module.modulemap
+  cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a $namespaced_header_dir --headers --modulemap --module-name $1FFI --modulemap-filename module.modulemap
 }
 
 create_fat_simulator_lib() {
@@ -102,7 +102,6 @@ git config core.hooksPath .githooks
 
 cargo build -p $basename --lib --release --target aarch64-apple-ios-sim
 cargo build -p $basename --lib --release --target x86_64-apple-ios
-
 
 create_fat_simulator_lib $basename
 build_xcframework $basename
