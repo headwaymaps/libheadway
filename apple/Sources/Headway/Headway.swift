@@ -5,4 +5,4 @@
 //  Created by Michael Kirk on 10/8/25.
 //
 
-public import HeadwayFFI
+@_exported import HeadwayUniFFI
