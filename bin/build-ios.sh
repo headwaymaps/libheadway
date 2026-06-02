@@ -2,6 +2,8 @@
 
 SCRIPT_DIR=${0:a:h}
 
+export IPHONEOS_DEPLOYMENT_TARGET=16.0
+
 set -e
 set -u
 
@@ -46,12 +48,14 @@ generate_ffi() {
 
   echo "Using iOS library for FFI generation"
   # TODO: do we need module-name here?
-  cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a ../apple/Sources/UniFFI --swift-sources
+  cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib${1}.a ../apple/Sources/UniFFI --swift-sources
 
   # NOTE: headers are in a flat namespace, so any other framework with a module.modulemap at the top level would collide if we didn't add a directory for namespacing
-  namespaced_header_dir="${header_dir}/$1"
+  # namespaced_header_dir="${header_dir}/$1"
+  namespaced_header_dir="${header_dir}/${1}FFI"
   # NOTE: Convention requires the modulemap be named module.modulemap
-  cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib$1.a $namespaced_header_dir --headers --modulemap --module-name $1FFI --modulemap-filename module.modulemap
+  cargo run -p uniffi-bindgen-swift -- "target/aarch64-apple-ios/release/lib${1}.a" $namespaced_header_dir --headers --modulemap --module-name "${1}FFI" --modulemap-filename module.modulemap
+
 }
 
 create_fat_simulator_lib() {
@@ -65,14 +69,15 @@ build_xcframework() {
   echo "Generating XCFramework"
   rm -rf target/ios  # Delete the output folder so we can regenerate it
   xcodebuild -create-xcframework \
-    -library target/aarch64-apple-ios/release/lib$1.a -headers "$header_dir" \
-    -library target/ios-simulator-fat/release/lib$1.a -headers "$header_dir" \
-    -output target/ios/lib$1-rs.xcframework
+    -library target/aarch64-apple-ios/release/lib${1}.a -headers "$header_dir" \
+    -library target/ios-simulator-fat/release/lib${1}.a -headers "$header_dir" \
+    -output target/ios/${1}FFI.xcframework
 
+  # NOTE: I've tried to keep the `release` code in sync with other changes, but haven't it.
   if $release; then
     echo "Building xcframework archive"
-    ditto -c -k --sequesterRsrc --keepParent target/ios/lib$1-rs.xcframework target/ios/lib$1-rs.xcframework.zip
-    checksum=$(swift package compute-checksum target/ios/lib$1-rs.xcframework.zip)
+    ditto -c -k --sequesterRsrc --keepParent target/ios/${1}FFI.xcframework target/ios/${1}FFI.xcframework.zip
+    checksum=$(swift package compute-checksum target/ios/${1}FFI.xcframework.zip)
     version=$(cargo metadata --format-version 1 | jq -r --arg pkg_name "$1" '.packages[] | select(.name==$pkg_name) .version')
     sed -i "" -E "s/(let releaseTag = \")[^\"]+(\")/\1$version\2/g" ../Package.swift
     sed -i "" -E "s/(let releaseChecksum = \")[^\"]+(\")/\1$checksum\2/g" ../Package.swift
@@ -90,15 +95,13 @@ else
   cargo build -p $basename --lib --release --target aarch64-apple-ios
 fi
 
+rm -fr target/{ios,ios-simulator-fat,uniffi-xcframework-staging}
 generate_ffi $basename
 
 if $ffi_only; then
   echo "FFI-only build completed. Skipping XCFramework generation."
   exit 0
 fi
-
-# enable githooks, so swiftformat runs as a pre commit hook
-git config core.hooksPath .githooks
 
 cargo build -p $basename --lib --release --target aarch64-apple-ios-sim
 cargo build -p $basename --lib --release --target x86_64-apple-ios

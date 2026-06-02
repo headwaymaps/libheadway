@@ -11,24 +11,24 @@ let package = Package(
     products: [
       .library(
         name: "Headway",
-        targets: ["Headway", "HeadwayFFI"]
+        targets: ["Headway", "HeadwayUniFFI"]
       ),
     ],
     targets: [
       .binaryTarget(
-        name: "HeadwayRS",
+        name: "headwayFFI",
         // run `./bin/build-ios.sh` to produce this framework
         // re-run whenever rust code is modified
-        path: "./common/target/ios/libheadway-rs.xcframework"
+        path: "./common/target/ios/headwayFFI.xcframework"
       ),
       .target(
-        name: "HeadwayFFI",
-        dependencies: [.target(name: "HeadwayRS")],
+        name: "HeadwayUniFFI",
+        dependencies: [.target(name: "headwayFFI")],
         path: "apple/Sources/UniFFI"
       ),
       .target(
         name: "Headway",
-        dependencies: [.target(name: "HeadwayFFI")],
+        dependencies: [.target(name: "HeadwayUniFFI")],
         path: "apple/Sources/Headway"
       ),
     ]

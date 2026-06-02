@@ -2,3 +2,4 @@
 common/target/
 
 .swiftpm
+.build
