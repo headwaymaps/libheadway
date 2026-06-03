@@ -3,8 +3,6 @@ pub mod server;
 
 pub use server::HeadwayServer;
 
-uniffi::setup_scaffolding!();
-
 #[cfg(target_os = "ios")]
 use oslog::OsLogger;
 
@@ -91,3 +89,4 @@ pub fn enable_logging(subsystem: String, log_level: LogLevel) {
     }
 }
 
+uniffi::setup_scaffolding!();

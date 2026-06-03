@@ -16,14 +16,14 @@ let package = Package(
     ],
     targets: [
       .binaryTarget(
-        name: "HeadwayRS",
+        name: "headwayFFI",
         // run `./bin/build-ios.sh` to produce this framework
         // re-run whenever rust code is modified
-        path: "./common/target/ios-workdir/HeadwayRs.xcframework"
+        path: "./common/target/ios/headwayFFI.xcframework"
       ),
       .target(
         name: "HeadwayUniFFI",
-        dependencies: [.target(name: "HeadwayRS")],
+        dependencies: [.target(name: "headwayFFI")],
         path: "apple/Sources/UniFFI"
       ),
       .target(
