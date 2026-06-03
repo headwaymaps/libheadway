@@ -1,6 +1,6 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 
-SCRIPT_DIR=${0:a:h}
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 export IPHONEOS_DEPLOYMENT_TARGET=16.0
 
@@ -36,46 +36,66 @@ done
 
 cd "$SCRIPT_DIR/../common"
 
-# Potential optimizations for the future:
-#
-# * Only build one simulator arch for local development (we build both since many still use Intel Macs)
-# * Option to do debug builds instead for local development
-fat_simulator_lib_dir="target/ios-simulator-fat/release"
-
-header_dir=target/uniffi-xcframework-staging/headers
+header_dir=target/ios/framework-headers
 generate_ffi() {
-  echo "Generating framework module mapping and FFI bindings"
+  # NOTE: During the xcode build process, headers from included frameworks are merged into a flat namespace,
+  # so any other framework with a module.modulemap at the top level of includes would collide if we didn't
+  # add a subdirectory for namespacing.
+  #
+  # This subdir's name must exactly match the name of the binary target in order for the subsequent xcode build
+  # process to find these includes.
+  #
+  # e.g. if the includes end up in "Headers/headwayFFI", then our Package.swift must be like:
+  #
+  # ```
+  # .binaryTarget(
+  #   name: "headwayFFI", // <-- this name must match namespaced_header_dir
+  #   path: "./common/target/ios/headwayFFI.xcframework"
+  # ),
+  # ```
+  #
+  # Technically the target name, framework file name, and module name are separate things,
+  # but it's easier to keep everything straight when they are all the same.
+  local module_name="${1}FFI"
+  local namespaced_header_dir="${header_dir}/${module_name}"
+  echo "Generating C-header and module map for ${module_name}" >&2
+  # NOTE: Swift package managers clang invocation will only find the modulemap if it's named module.modulemap
+  cargo run -p uniffi-bindgen-swift -- "target/aarch64-apple-ios/release/lib${1}.a" $namespaced_header_dir --headers --modulemap --module-name "$module_name" --modulemap-filename module.modulemap
 
-  echo "Using iOS library for FFI generation"
-  # TODO: do we need module-name here?
+  # NOTE: we use the aarch64-apple-ios target for the generated bindings.
+  echo "Generating swift bindings for FFI" >&2
   cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/lib${1}.a ../apple/Sources/UniFFI --swift-sources
-
-  # NOTE: headers are in a flat namespace, so any other framework with a module.modulemap at the top level would collide if we didn't add a directory for namespacing
-  # namespaced_header_dir="${header_dir}/$1"
-  namespaced_header_dir="${header_dir}/${1}FFI"
-  # NOTE: Convention requires the modulemap be named module.modulemap
-  cargo run -p uniffi-bindgen-swift -- "target/aarch64-apple-ios/release/lib${1}.a" $namespaced_header_dir --headers --modulemap --module-name "${1}FFI" --modulemap-filename module.modulemap
-
 }
 
 create_fat_simulator_lib() {
-  echo "Creating a fat library for x86_64 and aarch64 simulators"
+  # Potential optimizations for the future:
+  #
+  # * Only build one simulator arch for local development (we build both since many still use Intel Macs)
+  # * Option to do debug builds instead for local development
+  fat_simulator_lib_dir="target/ios/simulator-fat/release"
+
+  echo "Creating a fat library for aarch64 and x86_64 simulators" >&2
+  cargo build -p $1 --lib --release --target aarch64-apple-ios-sim
+  cargo build -p $1 --lib --release --target x86_64-apple-ios
   mkdir -p $fat_simulator_lib_dir
-  lipo -create target/x86_64-apple-ios/release/lib$1.a target/aarch64-apple-ios-sim/release/lib$1.a -output $fat_simulator_lib_dir/lib$1.a
+  local output="${fat_simulator_lib_dir}/lib${1}.a"
+  lipo -create target/x86_64-apple-ios/release/lib$1.a target/aarch64-apple-ios-sim/release/lib$1.a -output "$output"
+  echo "$output"
 }
 
 build_xcframework() {
-  # Builds an XCFramework
-  echo "Generating XCFramework"
-  rm -rf target/ios  # Delete the output folder so we can regenerate it
+  echo "Generating XCFramework" >&2
+
+  local simulator_lib="$(create_fat_simulator_lib $1)"
+
   xcodebuild -create-xcframework \
     -library target/aarch64-apple-ios/release/lib${1}.a -headers "$header_dir" \
-    -library target/ios-simulator-fat/release/lib${1}.a -headers "$header_dir" \
+    -library "$simulator_lib" -headers "$header_dir" \
     -output target/ios/${1}FFI.xcframework
 
-  # NOTE: I've tried to keep the `release` code in sync with other changes, but haven't it.
+  # NOTE: I've tried to keep the `release` code in sync with other changes, but haven't tested it.
   if $release; then
-    echo "Building xcframework archive"
+    echo "Building xcframework archive" >&2
     ditto -c -k --sequesterRsrc --keepParent target/ios/${1}FFI.xcframework target/ios/${1}FFI.xcframework.zip
     checksum=$(swift package compute-checksum target/ios/${1}FFI.xcframework.zip)
     version=$(cargo metadata --format-version 1 | jq -r --arg pkg_name "$1" '.packages[] | select(.name==$pkg_name) .version')
@@ -84,27 +104,19 @@ build_xcframework() {
   fi
 }
 
-basename=headway
+crate_name=headway
 
-# Build appropriate target based on mode
-if $ffi_only; then
-  echo "Building in FFI-only mode for the current platform"
-  cargo build -p $basename --lib --release
-else
-  echo "Building for iOS"
-  cargo build -p $basename --lib --release --target aarch64-apple-ios
-fi
+# Clean framework artifacts
+rm -fr target/ios
 
-rm -fr target/{ios,ios-simulator-fat,uniffi-xcframework-staging}
-generate_ffi $basename
+echo "Building for iOS" >&2
+cargo build -p $crate_name --lib --release --target aarch64-apple-ios
+
+generate_ffi $crate_name
 
 if $ffi_only; then
-  echo "FFI-only build completed. Skipping XCFramework generation."
+  echo "FFI-only build completed. Skipping XCFramework generation." >&2
   exit 0
 fi
 
-cargo build -p $basename --lib --release --target aarch64-apple-ios-sim
-cargo build -p $basename --lib --release --target x86_64-apple-ios
-
-create_fat_simulator_lib $basename
-build_xcframework $basename
+build_xcframework $crate_name
